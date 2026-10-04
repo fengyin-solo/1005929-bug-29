@@ -3,14 +3,51 @@
     <header class="page-head">
       <div>
         <h2>发电结算管理</h2>
-        <p class="page-desc">维护电量结算单，围绕结算单号、结算周期、上网电量、结算电价做登记、筛选与状态流转。</p>
+        <p class="page-desc">
+          维护电量结算单。计量复核通过的上网关口电量自动进入下方「计量复核待核算清单」，
+          清单电量就是抄录记录里的本期电量，两处对得上才能发起核算。
+        </p>
       </div>
       <div class="page-actions">
-        <button class="btn primary" type="button" @click="openCreate">登记电量结算单</button>
         <button class="btn" type="button" @click="exportRows">导出发电结算清单</button>
       </div>
     </header>
 
+    <h3 class="block-title">计量复核待核算清单（来自关口表复核结果）</h3>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>待核算单号</th>
+          <th>结算周期</th>
+          <th>电站</th>
+          <th>本期电量合计(kWh)</th>
+          <th>关联抄录记录</th>
+          <th>核对状态</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr v-for="draft in meterDrafts" :key="draft.no">
+          <td>{{ draft.no }}</td>
+          <td>{{ draft.period }}</td>
+          <td>{{ draft.stationName }}</td>
+          <td>{{ draft.energy }}</td>
+          <td>
+            <span v-for="(id, i) in draft.readingIds" :key="id" class="chip">
+              #{{ id }}（{{ readingEnergy(id) }} kWh）<template v-if="i < draft.readingIds.length - 1"> + </template>
+            </span>
+          </td>
+          <td>
+            <span class="ok-text">已与抄录记录核对一致</span>
+          </td>
+        </tr>
+        <tr v-if="!meterDrafts.length">
+          <td colspan="6" class="empty-state">还没有复核通过的上网关口电量；请到「电量计量」复核抄录</td>
+        </tr>
+      </tbody>
+    </table>
+    <p class="muted-note">说明：下网关口 / 站用变关口电量不进结算；历史老单据按原单留档，默认不重复挂待核算。</p>
+
+    <h3 class="block-title">结算单台账（通用登记）</h3>
     <div class="stat-row">
       <article v-for="item in stats" :key="item.label" class="stat-card">
         <span class="stat-label">{{ item.label }}</span>
@@ -58,13 +95,13 @@
           </td>
         </tr>
         <tr v-if="!rows.length">
-          <td :colspan="columns.length + 2" class="empty-state">暂无发电结算数据，可先登记电量结算单</td>
+          <td :colspan="columns.length + 2" class="empty-state">暂无发电结算数据</td>
         </tr>
       </tbody>
     </table>
 
     <footer class="page-foot">
-      <span>共 {{ total }} 条发电结算记录</span>
+      <span>共 {{ total }} 条结算单台账记录</span>
       <span v-if="errorMessage" class="error-text">{{ errorMessage }}</span>
     </footer>
   </section>
@@ -79,25 +116,30 @@ import {
   moduleMeta,
   runAction as applyAction,
 } from '@/api/local-service'
+import { getAllReadings, getSettlementDrafts } from '@/data/meter/service'
 import type { EntryRow } from '@/data/types'
 
 const meta = moduleMeta('settlement')
-const columns = ["结算单号", "结算周期", "上网电量", "结算电价", "补贴金额", "结算金额", "开票状态", "结算状态"]
-const actions = ["发起核算", "确认结算", "登记开票"]
-const statuses = ["待核算", "核算中", "已确认", "已开票"]
-const stats = [{"label": "待核算结算单", "value": 0}, {"label": "本月上网电量", "value": 0}, {"label": "本月结算金额", "value": 0}]
+const columns = ['结算单号', '结算周期', '上网电量', '结算电价', '补贴金额', '结算金额', '开票状态', '结算状态']
+const actions = ['发起核算', '确认结算', '登记开票']
+const statuses = ['待核算', '核算中', '已确认', '已开票']
+const stats = [{ label: '待核算结算单', value: 0 }, { label: '本月上网电量', value: 0 }, { label: '本月结算金额', value: 0 }]
 
 const rows = ref<EntryRow[]>([])
 const total = ref(0)
 const errorMessage = ref('')
 const filters = ref<Record<string, string>>({})
 const filterFields = columns.slice(0, 3)
+
 const statusSummary = computed(() =>
   statuses.map((status: string) => ({
     status,
     count: rows.value.filter((row) => String(row.status) === status).length,
   })),
 )
+
+const meterDrafts = computed(() => getSettlementDrafts())
+const readingEnergy = (id: number) => getAllReadings().find((item) => item.id === id)?.energy ?? '—'
 
 function resetFilters() {
   filters.value = {}
@@ -106,10 +148,6 @@ function resetFilters() {
 
 function exportRows() {
   downloadEntries(meta.key)
-}
-
-function openCreate() {
-  errorMessage.value = '电量结算单登记入口尚未接入审批流'
 }
 
 function runAction(action: string, row: EntryRow) {
@@ -135,3 +173,10 @@ function reload() {
 
 onMounted(reload)
 </script>
+
+<style scoped>
+.block-title { margin: 16px 0 8px; font-size: 15px; }
+.muted-note { font-size: 12px; color: var(--muted); margin: 6px 0 14px; }
+.chip { white-space: nowrap; }
+.ok-text { color: #067647; }
+</style>
